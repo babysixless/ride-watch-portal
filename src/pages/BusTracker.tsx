@@ -15,13 +15,15 @@ const MOCK_BUS_INFO = [
 
 const BusTracker = () => {
   const [showBusList, setShowBusList] = useState(false);
+  // You can provide a custom Mapbox token here if needed
+  const mapboxToken = import.meta.env.VITE_MAPBOX_TOKEN || '';
 
   return (
     <Layout requireRole="passenger">
       <div className="h-screen relative">
         {/* Map taking 60% of the screen */}
         <div className="h-[60vh] relative">
-          <BusMap className="w-full h-full" />
+          <BusMap className="w-full h-full" mapboxToken={mapboxToken} />
           
           <div className="absolute right-4 top-16 z-10">
             <Button 

@@ -3,11 +3,13 @@ import { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { useToast } from "@/components/ui/use-toast";
-import { Bus, LocateFixed } from 'lucide-react';
+import { Bus, LocateFixed, MapPin } from 'lucide-react';
 import { Button } from './ui/button';
+import { Card } from './ui/card';
 
 interface BusMapProps {
   className?: string;
+  mapboxToken?: string;
 }
 
 // Mock bus data for demonstration
@@ -17,13 +19,19 @@ const MOCK_BUSES = [
   { id: 'bus-3', name: 'Bus #789', route: 'Uptown Local', lat: 40.7023, lng: -74.012, arrivalTime: '3 mins' },
 ];
 
-export const BusMap = ({ className }: BusMapProps) => {
+// Default token - should be replaced with an environment variable in production
+const DEFAULT_TOKEN = 'pk.eyJ1IjoibG92YWJsZWRldiIsImEiOiJjbDVnbzMxbWsxNXJnM2Jxcjg1Z2NqM3BnIn0.I5H-c8R3OD2VzQdYwHbLWw';
+
+export const BusMap = ({ className, mapboxToken }: BusMapProps) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const busMarkers = useRef<mapboxgl.Marker[]>([]);
   const userMarker = useRef<mapboxgl.Marker | null>(null);
   const { toast } = useToast();
+  const [tokenError, setTokenError] = useState(false);
+  const [customToken, setCustomToken] = useState('');
+  const [isMapLoaded, setIsMapLoaded] = useState(false);
 
   // Handle getting user location
   const getUserLocation = () => {
@@ -39,17 +47,19 @@ export const BusMap = ({ className }: BusMapProps) => {
           setUserLocation([longitude, latitude]);
           
           // Center map on user location
-          map.current?.flyTo({
-            center: [longitude, latitude],
-            zoom: 14,
-            essential: true
-          });
-          
-          toast({
-            title: "Location found",
-            description: "Your location has been updated on the map",
-            duration: 3000,
-          });
+          if (map.current) {
+            map.current.flyTo({
+              center: [longitude, latitude],
+              zoom: 14,
+              essential: true
+            });
+            
+            toast({
+              title: "Location found",
+              description: "Your location has been updated on the map",
+              duration: 3000,
+            });
+          }
         },
         (error) => {
           console.error("Error getting location:", error);
@@ -71,39 +81,54 @@ export const BusMap = ({ className }: BusMapProps) => {
     }
   };
 
-  // Initialize map
-  useEffect(() => {
+  // Initialize map with token
+  const initializeMap = (token: string) => {
     if (!mapContainer.current) return;
+    
+    // Clean up existing map if any
+    if (map.current) {
+      map.current.remove();
+      map.current = null;
+    }
+    
+    try {
+      setTokenError(false);
+      mapboxgl.accessToken = token;
+      
+      map.current = new mapboxgl.Map({
+        container: mapContainer.current,
+        style: 'mapbox://styles/mapbox/streets-v12',
+        center: [-74.5, 40], // Default coordinates (New York area)
+        zoom: 11
+      });
 
-    // Replace with your Mapbox access token
-    mapboxgl.accessToken = 'pk.eyJ1IjoibG92YWJsZWRldiIsImEiOiJjbDVnbzMxbWsxNXJnM2Jxcjg1Z2NqM3BnIn0.I5H-c8R3OD2VzQdYwHbLWw';
+      // Add navigation controls
+      map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
 
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
-      center: [-74.5, 40], // Default coordinates (New York area)
-      zoom: 11
-    });
+      // Get user location and add bus markers on map load
+      map.current.on('load', () => {
+        setIsMapLoaded(true);
+        getUserLocation();
+        addBusMarkers();
+      });
+      
+      // Handle error
+      map.current.on('error', (e) => {
+        console.error('Mapbox error:', e);
+        if (e.error?.status === 401) {
+          setTokenError(true);
+          map.current?.remove();
+          map.current = null;
+        }
+      });
+    } catch (error) {
+      console.error("Error initializing map:", error);
+      setTokenError(true);
+    }
+  };
 
-    // Add navigation controls
-    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
-
-    // Get user location on map load
-    map.current.on('load', () => {
-      getUserLocation();
-    });
-
-    // Clean up on unmount
-    return () => {
-      // Remove all markers
-      busMarkers.current.forEach(marker => marker.remove());
-      if (userMarker.current) userMarker.current.remove();
-      map.current?.remove();
-    };
-  }, []);
-
-  // Update bus markers when map is ready
-  useEffect(() => {
+  // Add bus markers to the map
+  const addBusMarkers = () => {
     if (!map.current || !map.current.loaded()) return;
 
     // Remove any existing bus markers
@@ -170,11 +195,8 @@ export const BusMap = ({ className }: BusMapProps) => {
         
         marker.setLngLat([newLng, newLat]);
       }, 3000);
-      
-      // Clean up interval on component unmount
-      return () => clearInterval(moveInterval);
     });
-  }, [map.current?.loaded()]);
+  };
 
   // Update user location marker when location changes
   useEffect(() => {
@@ -201,21 +223,69 @@ export const BusMap = ({ className }: BusMapProps) => {
       
   }, [userLocation]);
 
+  // Initialize map on component mount
+  useEffect(() => {
+    const token = mapboxToken || DEFAULT_TOKEN;
+    initializeMap(token);
+    
+    // Clean up on unmount
+    return () => {
+      // Remove all markers
+      busMarkers.current.forEach(marker => marker.remove());
+      if (userMarker.current) userMarker.current.remove();
+      if (map.current) map.current.remove();
+    };
+  }, [mapboxToken]);
+
+  // Apply custom token when provided
+  const handleApplyToken = () => {
+    if (customToken.trim()) {
+      initializeMap(customToken.trim());
+    }
+  };
+
   return (
     <div className={`relative ${className}`}>
-      <div ref={mapContainer} className="map-container absolute inset-0 rounded-lg" />
-      
-      {/* Floating location button */}
-      <div className="absolute right-4 top-4 z-10">
-        <Button 
-          variant="secondary" 
-          size="icon"
-          onClick={getUserLocation}
-          className="bg-white/80 backdrop-blur-sm hover:bg-white shadow-md"
-        >
-          <LocateFixed className="h-4 w-4" />
-        </Button>
-      </div>
+      {tokenError ? (
+        <div className="bg-gray-100 rounded-lg p-4 h-full flex flex-col items-center justify-center text-center">
+          <MapPin className="h-12 w-12 text-primary mb-4" />
+          <h3 className="text-xl font-semibold mb-2">Mapbox Token Required</h3>
+          <p className="mb-4 text-muted-foreground">Please enter a valid Mapbox access token to display the map</p>
+          
+          <div className="w-full max-w-md space-y-2 mb-4">
+            <input 
+              type="text"
+              placeholder="Enter your Mapbox token" 
+              className="w-full p-2 border rounded-md"
+              value={customToken}
+              onChange={(e) => setCustomToken(e.target.value)}
+            />
+            <Button onClick={handleApplyToken} className="w-full">
+              Apply Token
+            </Button>
+          </div>
+          
+          <p className="text-sm text-muted-foreground">
+            Get your free token from <a href="https://mapbox.com/" target="_blank" rel="noopener noreferrer" className="text-primary underline">mapbox.com</a> by signing up and viewing your access tokens in the account dashboard.
+          </p>
+        </div>
+      ) : (
+        <>
+          <div ref={mapContainer} className="map-container absolute inset-0 rounded-lg" />
+          
+          {/* Floating location button */}
+          <div className="absolute right-4 top-4 z-10">
+            <Button 
+              variant="secondary" 
+              size="icon"
+              onClick={getUserLocation}
+              className="bg-white/80 backdrop-blur-sm hover:bg-white shadow-md"
+            >
+              <LocateFixed className="h-4 w-4" />
+            </Button>
+          </div>
+        </>
+      )}
     </div>
   );
 };
