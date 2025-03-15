@@ -120,4 +120,34 @@
   .map-controls {
     @apply absolute right-4 top-4 flex flex-col gap-2;
   }
+  
+  /* Map marker animations */
+  .bus-marker {
+    transition: all 0.3s ease-in-out;
+  }
+  
+  .bus-marker:hover {
+    transform: scale(1.2);
+  }
+  
+  .user-location-marker {
+    animation: pulse 2s infinite;
+  }
+  
+  @keyframes pulse {
+    0% {
+      box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.7);
+    }
+    70% {
+      box-shadow: 0 0 0 10px rgba(74, 222, 128, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(74, 222, 128, 0);
+    }
+  }
+  
+  /* Mapbox popup customization */
+  .mapboxgl-popup-content {
+    @apply rounded-lg shadow-lg border border-border p-3;
+  }
 }
